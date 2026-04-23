@@ -113,10 +113,21 @@ function frameSplat(entity) {
   }
 }
 
-function loadSplat() {
-  const asset = new pc.Asset('splat', 'gsplat', { url: '/splat.ply' });
+// PlayCanvas dispatches gsplat parsers by URL extension:
+//   .ply         -> PlyParser (raw 3DGS)
+//   .sog         -> SogBundleParser (single-file SOG)
+//   .json (meta) -> SogParser (unpacked SOG bundle: meta.json + .webp siblings)
+// We probe these candidates in order and use the first one that exists.
+const SPLAT_CANDIDATES = [
+  '/model/meta.json',
+  '/model.sog',
+  '/splat.ply',
+];
+
+function loadSplat(url) {
+  const asset = new pc.Asset('splat', 'gsplat', { url });
   asset.on('error', (err) => {
-    showError(`Failed to load /splat.ply: ${err}`);
+    showError(`Failed to load ${url}: ${err}`);
   });
   asset.ready((readyAsset) => {
     const entity = new pc.Entity('splat');
@@ -124,23 +135,32 @@ function loadSplat() {
     app.root.addChild(entity);
     // Wait one frame so the gsplat instance has its aabb populated.
     requestAnimationFrame(() => frameSplat(entity));
+    console.log(`[VIOS Sandbox] Loaded splat from ${url}`);
   });
   app.assets.add(asset);
   app.assets.load(asset);
 }
 
-function startSplatLoad() {
-  fetch('/splat.ply', { method: 'HEAD' })
-    .then((res) => {
-      if (!res.ok) {
-        showError('splat.ply missing from /public/. Drop the file in and refresh.');
-        return;
-      }
-      loadSplat();
-    })
-    .catch(() => {
-      showError('Could not reach dev server to check /splat.ply. Is `npm run dev` running?');
-    });
+async function probeExists(url) {
+  try {
+    const res = await fetch(url, { method: 'HEAD' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function startSplatLoad() {
+  for (const url of SPLAT_CANDIDATES) {
+    if (await probeExists(url)) {
+      loadSplat(url);
+      return;
+    }
+  }
+  showError(
+    'No splat model found. Drop one of these into /public/: ' +
+    'model/meta.json (unpacked SOG), model.sog (packed SOG), or splat.ply.'
+  );
 }
 
 // === Start ===
